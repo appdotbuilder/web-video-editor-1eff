@@ -1,20 +1,44 @@
+import { db } from '../db';
+import { projectsTable, usersTable } from '../db/schema';
 import { type CreateProjectInput, type Project } from '../schema';
+import { eq } from 'drizzle-orm';
 
-export async function createProject(input: CreateProjectInput): Promise<Project> {
-    // This is a placeholder declaration! Real code should be implemented here.
-    // The goal of this handler is creating a new video editing project and persisting it in the database.
-    // Should validate user existence, set default values, and initialize project with proper settings.
-    return Promise.resolve({
-        id: 0, // Placeholder ID
+export const createProject = async (input: CreateProjectInput): Promise<Project> => {
+  try {
+    // First, verify that the user exists
+    const user = await db.select()
+      .from(usersTable)
+      .where(eq(usersTable.id, input.user_id))
+      .execute();
+
+    if (user.length === 0) {
+      throw new Error(`User with id ${input.user_id} does not exist`);
+    }
+
+    // Insert project record with proper numeric conversions
+    const result = await db.insert(projectsTable)
+      .values({
         title: input.title,
         description: input.description || null,
-        status: 'draft' as const,
-        duration: null, // Will be calculated based on timeline items
-        frame_rate: input.frame_rate || 30,
-        resolution_width: input.resolution_width || 1920,
-        resolution_height: input.resolution_height || 1080,
-        user_id: input.user_id,
-        created_at: new Date(),
-        updated_at: new Date()
-    } as Project);
-}
+        frame_rate: input.frame_rate.toString(), // Convert number to string for numeric column
+        resolution_width: input.resolution_width,
+        resolution_height: input.resolution_height,
+        user_id: input.user_id
+        // status defaults to 'draft', duration defaults to null
+        // created_at and updated_at are automatically set
+      })
+      .returning()
+      .execute();
+
+    // Convert numeric fields back to numbers before returning
+    const project = result[0];
+    return {
+      ...project,
+      frame_rate: parseFloat(project.frame_rate), // Convert string back to number
+      duration: project.duration ? parseFloat(project.duration) : null // Handle nullable numeric
+    };
+  } catch (error) {
+    console.error('Project creation failed:', error);
+    throw error;
+  }
+};
